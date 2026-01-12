@@ -56,3 +56,4 @@ prisma
 
 # Server folder (backend)
 server
+!server/prisma

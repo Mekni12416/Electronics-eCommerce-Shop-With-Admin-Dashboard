@@ -1,0 +1,162 @@
+# ================================
+# Docker Compose - Application Full Stack
+# ================================
+# Orchestre 3 services: MySQL, Backend (Node.js/Express), Frontend (Next.js)
+
+version: '3.8'
+
+# ================================
+# SERVICES
+# ================================
+services:
+  # ================================
+  # SERVICE 1: Base de données MySQL
+  # ================================
+  mysql:
+    # Image officielle MySQL version 8.0
+    image: mysql:8.0
+
+    # Nom du conteneur pour faciliter l'identificationf
+    container_name: devops-mysql
+
+    # Variables d'environnement pour la configuration MySQL
+    environment:
+      # Mot de passe root MySQL
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+
+      # Nom de la base de données à créer automatiquement
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+
+      # Utilisateur MySQL (non-root) pour l'application
+      MYSQL_USER: ${MYSQL_USER}
+
+      # Mot de passe de l'utilisateur MySQL
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+
+    # Volumes pour la persistance des données
+    volumes:
+      # Volume nommé pour persister les données MySQL
+      # Les données survivent même si le conteneur est supprimé
+      - mysql_data:/var/lib/mysql
+
+      # Script SQL d'initialisation (exécuté au premier démarrage)
+      # Crée les tables via Prisma migrations
+      - ./server/prisma/migrations:/docker-entrypoint-initdb.d
+
+    # Mapping des ports (host:container)
+    ports:
+      - "3306:3306"
+
+    # Réseau pour la communication inter-services
+    networks:
+      - devops-network
+
+    # Healthcheck pour vérifier que MySQL est prêt
+    # Le backend attendra que ce check soit OK avant de démarrer
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ================================
+  # SERVICE 2: Backend (Node.js/Express)
+  # ================================
+  backend:
+    # Build depuis le Dockerfile dans ./server
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+
+    # Nom du conteneur
+    container_name: devops-backend
+
+    # Variables d'environnement pour le backend
+    environment:
+      # Connexion à MySQL (utilise le nom du service comme hostname)
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+
+      # Configuration de l'application
+      PORT: ${PORT}
+      NODE_ENV: ${NODE_ENV}
+
+      # URL de connexion Prisma (format MySQL)
+      DATABASE_URL: ${DATABASE_URL}
+
+    # Mapping des ports
+    ports:
+      - "5000:5000"
+
+    # Dépendances: attend que MySQL soit healthy avant de démarrer
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    # Réseau
+    networks:
+      - devops-network
+
+    # Politique de redémarrage: redémarre automatiquement sauf si arrêté manuellement
+    restart: unless-stopped
+
+  # ================================
+  # SERVICE 3: Frontend (Next.js)
+  # ================================
+  frontend:
+    # Build depuis le Dockerfile à la racine
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Arguments de build (passés au Dockerfile)
+      args:
+        # URL de l'API backend (utilisée pendant le build)
+        API_URL: ${API_URL}
+
+    # Nom du conteneur
+    container_name: devops-frontend
+
+    # Variables d'environnement pour le frontend
+    environment:
+      # URL de l'API backend (utilisée au runtime)
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      INTERNAL_API_BASE_URL: http://backend:5000
+
+    # Mapping des ports
+    ports:
+      - "3000:3000"
+
+    # Dépendances: attend que le backend soit démarré
+    depends_on:
+      - backend
+
+    # Réseau
+    networks:
+      - devops-network
+
+    # Politique de redémarrage
+    restart: unless-stopped
+
+# ================================
+# VOLUMES
+# ================================
+volumes:
+  # Volume nommé pour la persistance des données MySQL
+  # Les données sont stockées sur l'hôte et survivent aux redémarrages
+  mysql_data:
+    driver: local
+
+# ================================
+# NETWORKS
+# ================================
+networks:
+  # Réseau bridge personnalisé pour la communication inter-services
+  # Permet aux services de se découvrir par leur nom (mysql, backend, frontend)
+  devops-network:
+    driver: bridge

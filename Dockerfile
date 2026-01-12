@@ -37,8 +37,12 @@ ARG API_URL=http://localhost:3001
 RUN echo "NEXT_PUBLIC_API_BASE_URL=${API_URL}" > .env.production
 
 # Build l'application Next.js
-# Prisma generate est nécessaire car le script build l'appelle
-RUN npm run build
+# Build l'application Next.js
+# Utilise docker:build qui n'inclut pas prisma generate (Prisma est uniquement pour le backend)
+# Mais on a besoin du client Prisma généré pour le frontend (NextAuth, etc.)
+ENV DATABASE_URL="mysql://dummy:dummy@localhost:3306/dummy"
+RUN npx prisma generate --schema=./server/prisma/schema.prisma
+RUN npm run docker:build
 
 # Liste le contenu de .next pour vérification
 # Utile pour debugger si le build échoue
