@@ -2,10 +2,11 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: mysql-pvc
+  namespace: default  # toujours spécifier le namespace
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
       storage: 2Gi
-  storageClassName: standard # Minikube default storage class
+  storageClassName: local-path # K3s par défaut utilise "local-path" et non "standard"
