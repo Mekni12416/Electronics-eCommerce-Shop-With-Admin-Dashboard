@@ -5,10 +5,11 @@ metadata:
   labels:
     app: backend
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: backend
   ports:
   - port: 5000
     targetPort: 5000
+    nodePort: 30081
   sessionAffinity: ClientIP
