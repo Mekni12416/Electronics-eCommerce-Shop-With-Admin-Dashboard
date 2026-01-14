@@ -167,8 +167,10 @@ pipeline {
 
     post {
         always {
-            echo "Cleaning up workspace..."
+            echo "Cleaning up workspace and Docker dangling images..."
             cleanWs()
+            // Supprime les images Docker intermédiaires inutilisées pour libérer de l'espace
+            sh 'docker image prune -f'
         }
         success {
             echo "Pipeline succeeded! ✅"
