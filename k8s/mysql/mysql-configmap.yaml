@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config
+data:
+  init.sql: |
+    -- Initialisation de la table products (Exemple)
+    CREATE TABLE IF NOT EXISTS Product (
+      id VARCHAR(191) NOT NULL,
+      name VARCHAR(191) NOT NULL,
+      price DOUBLE NOT NULL,
+      description VARCHAR(191) NOT NULL,
+      image VARCHAR(191) NOT NULL,
+      slug VARCHAR(191) NOT NULL UNIQUE,
+      inStock INT NOT NULL DEFAULT 0,
+      categoryName VARCHAR(191) NOT NULL,
+      PRIMARY KEY (id)
+    );
+    INSERT IGNORE INTO Product (id, name, price, description, image, slug, inStock, categoryName) 
+    VALUES ('1', 'Exemple Produit', 99.99, 'Description produit test Kubernetes', 'https://placehold.co/600x400', 'k8s-test-product', 10, 'Electronics');

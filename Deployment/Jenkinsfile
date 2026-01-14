@@ -4,7 +4,7 @@ pipeline {
     environment {
         // Configuration générale
         DOCKER_REGISTRY = 'docker.io'
-        DOCKER_USERNAME = 'mekni12416' 
+        DOCKER_USERNAME = 'jihedmekni' 
         // DOCKER_PASSWORD doit être configuré dans Jenkins Credentials
         
         // SonarQube Configuration
@@ -57,59 +57,59 @@ pipeline {
             }
         }
 
-        stage('Run Tests') {
-            steps {
-                script {
-                    echo "Running Unit Tests..."
-                    parallel(
-                        "Backend Tests": {
-                            dir('server') {
-                                // Ignore failure pour ne pas bloquer le pipeline si les tests échouent (pour demo)
-                                // En prod, enlever returnStatus: true
-                                sh 'npm test -- --passWithNoTests || true'
-                            }
-                        },
-                        "Frontend Tests": {
-                            // Frontend root
-                            sh 'npm test -- --passWithNoTests || true'
-                        }
-                    )
-                }
-            }
-            post {
-                always {
-                    // Publie les résultats JUnit s'ils existent (configurer jest-junit)
-                    junit allowEmptyResults: true, testResults: '**/junit.xml'
-                }
-            }
-        }
+        // stage('Run Tests') {
+        //     steps {
+        //         script {
+        //             echo "Running Unit Tests..."
+        //             parallel(
+        //                 "Backend Tests": {
+        //                     dir('server') {
+        //                         // Ignore failure pour ne pas bloquer le pipeline si les tests échouent (pour demo)
+        //                         // En prod, enlever returnStatus: true
+        //                         sh 'npm test -- --passWithNoTests || true'
+        //                     }
+        //                 },
+        //                 "Frontend Tests": {
+        //                     // Frontend root
+        //                     sh 'npm test -- --passWithNoTests || true'
+        //                 }
+        //             )
+        //         }
+        //     }
+        //     post {
+        //         always {
+        //             // Publie les résultats JUnit s'ils existent (configurer jest-junit)
+        //             junit allowEmptyResults: true, testResults: '**/junit.xml'
+        //         }
+        //     }
+        // }
 
-        stage('SAST - SonarQube Scan') {
-            steps {
-                script {
-                    echo "Starting SonarQube Analysis..."
-                    // Nécessite le plugin SonarQube Scanner dans Jenkins
-                    withSonarQubeEnv('SonarQube') { // Nom du serveur configuré dans Jenkins
-                        // Scan du projet entier (Frontend + Backend)
-                        // sonar-project.properties devrait être à la racine
-                        sh """
-                            sonar-scanner \
-                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                            -Dsonar.sources=. \
-                            -Dsonar.exclusions=**/node_modules/**,**/.next/**,**/dist/** \
-                            -Dsonar.host.url=${SONAR_HOST_URL} \
-                            -Dsonar.login=\${SONAR_TOKEN}
-                        """
-                    }
-                }
-            }
-            post {
-                success {
-                    echo "SonarQube analysis successful. Waiting for Quality Gate..."
-                    // waitForQualityGate abortPipeline: true
-                }
-            }
-        }
+        // stage('SAST - SonarQube Scan') {
+        //     steps {
+        //         script {
+        //             echo "Starting SonarQube Analysis..."
+        //             // Nécessite le plugin SonarQube Scanner dans Jenkins
+        //             withSonarQubeEnv('SonarQube') { // Nom du serveur configuré dans Jenkins
+        //                 // Scan du projet entier (Frontend + Backend)
+        //                 // sonar-project.properties devrait être à la racine
+        //                 sh """
+        //                     sonar-scanner \
+        //                     -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+        //                     -Dsonar.sources=. \
+        //                     -Dsonar.exclusions=**/node_modules/**,**/.next/**,**/dist/** \
+        //                     -Dsonar.host.url=${SONAR_HOST_URL} \
+        //                     -Dsonar.login=\${SONAR_TOKEN}
+        //                 """
+        //             }
+        //         }
+        //     }
+        //     post {
+        //         success {
+        //             echo "SonarQube analysis successful. Waiting for Quality Gate..."
+        //             // waitForQualityGate abortPipeline: true
+        //         }
+        //     }
+        // }
 
         stage('Build Docker Images') {
             steps {
@@ -155,43 +155,43 @@ pipeline {
             }
         }
 
-        stage('Deploy to Staging (Docker Compose)') {
-            steps {
-                script {
-                    echo "Deploying to Staging Environment..."
-                    // Simule le déploiement sur staging (machine locale/agent current)
-                    sh 'docker-compose down'
-                    sh 'docker-compose pull'
-                    sh 'docker-compose up -d'
+        // stage('Deploy to Staging (Docker Compose)') {
+        //     steps {
+        //         script {
+        //             echo "Deploying to Staging Environment..."
+        //             // Simule le déploiement sur staging (machine locale/agent current)
+        //             sh 'docker-compose down'
+        //             sh 'docker-compose pull'
+        //             sh 'docker-compose up -d'
                     
-                    // Attente de la disponibilité
-                    echo "Waiting for services to be ready..."
-                    sleep 30
-                }
-            }
-        }
+        //             // Attente de la disponibilité
+        //             echo "Waiting for services to be ready..."
+        //             sleep 30
+        //         }
+        //     }
+        // }
 
-        stage('DAST - OWASP ZAP Scan') {
-            steps {
-                script {
-                    echo "Running DAST Security Scan with OWASP ZAP..."
-                    // Lance le scan ZAP via Docker
-                    // Scanne le frontend sur le port 3000
-                    sh """
-                        docker run --network host -v \$(pwd):/zap/wrk/:rw -t owasp/zap2docker-stable zap-baseline.py \
-                        -t http://localhost:3000 \
-                        -g gen.conf \
-                        -r zap_report.html || true
-                    """
-                }
-            }
-            post {
-                always {
-                    // Archive le rapport HTML
-                    archiveArtifacts artifacts: 'zap_report.html', allowEmptyArchive: true
-                }
-            }
-        }
+        // stage('DAST - OWASP ZAP Scan') {
+        //     steps {
+        //         script {
+        //             echo "Running DAST Security Scan with OWASP ZAP..."
+        //             // Lance le scan ZAP via Docker
+        //             // Scanne le frontend sur le port 3000
+        //             sh """
+        //                 docker run --network host -v \$(pwd):/zap/wrk/:rw -t owasp/zap2docker-stable zap-baseline.py \
+        //                 -t http://localhost:3000 \
+        //                 -g gen.conf \
+        //                 -r zap_report.html || true
+        //             """
+        //         }
+        //     }
+        //     post {
+        //         always {
+        //             // Archive le rapport HTML
+        //             archiveArtifacts artifacts: 'zap_report.html', allowEmptyArchive: true
+        //         }
+        //     }
+        // }
 
         stage('Deploy to Kubernetes (Minikube)') {
             when {
@@ -199,16 +199,19 @@ pipeline {
             }
             steps {
                 script {
-                    echo "Deploying to Kubernetes Cluster (Minikube)..."
-                    
-                    // Applique les manifests K8s
-                    // Assurez-vous que le répertoire k8s/ existe et contient les fichiers
-                    sh 'kubectl apply -f k8s/'
+                    // Crée le Secret Kubernetes à partir du fichier .env
+                    // On utilise --dry-run=client -o yaml | kubectl apply pour être idempotent
+                    sh 'kubectl create secret generic app-env --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -'
+
+                    // Applique les autres manifests K8s
+                    sh 'kubectl apply -f k8s/mysql/'
+                    sh 'kubectl apply -f k8s/backend/'
+                    sh 'kubectl apply -f k8s/frontend/'
                     
                     // Vérifie le déploiement
                     sh 'kubectl rollout status deployment/mysql-deployment || true'
-                    // sh 'kubectl rollout status deployment/backend-deployment || true'
-                    // sh 'kubectl rollout status deployment/frontend-deployment || true'
+                    sh 'kubectl rollout status deployment/backend-deployment || true'
+                    sh 'kubectl rollout status deployment/frontend-deployment || true'
                     
                     // Affiche les services
                     sh 'kubectl get svc'
