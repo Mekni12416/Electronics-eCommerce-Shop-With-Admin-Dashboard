@@ -22,8 +22,6 @@ spec:
         envFrom:
         - secretRef:
             name: app-env
-        # We Map specific expected MySQL env vars if they differ in .env, 
-        # but here the .env has MYSQL_ROOT_PASSWORD etc. directly.
         volumeMounts:
         - name: mysql-persistent-storage
           mountPath: /var/lib/mysql
@@ -45,8 +43,8 @@ spec:
         readinessProbe:
           exec:
             command: ["mysqladmin", "ping", "-h", "localhost"]
-          initialDelaySeconds: 5
-          periodSeconds: 2
+          initialDelaySeconds: 20
+          periodSeconds: 5
       volumes:
       - name: mysql-persistent-storage
         persistentVolumeClaim:
