@@ -25,7 +25,7 @@ spec:
         image: jihedmekni/devops-frontend:latest
         imagePullPolicy: Always
         ports:
-        - containerPort: 3000
+        - containerPort: 5000  # Correct port correspondant à Next.js
         envFrom:
         - secretRef:
             name: app-env
@@ -39,12 +39,12 @@ spec:
         livenessProbe:
           httpGet:
             path: /
-            port: 3000
+            port: 5000
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /
-            port: 3000
-          initialDelaySeconds: 10
+            port: 5000
+          initialDelaySeconds: 15
           periodSeconds: 5
