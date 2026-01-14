@@ -13,6 +13,7 @@ logs/
 # Database backups
 backups/
 *.sql
+!db-init.sql
 *.dump
 *.backup
 
