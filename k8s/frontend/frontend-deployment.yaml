@@ -29,6 +29,9 @@ spec:
         envFrom:
         - secretRef:
             name: app-env
+        env:
+        - name: INTERNAL_API_BASE_URL
+          value: "http://backend-service:5000"
         resources:
           requests:
             cpu: 100m
