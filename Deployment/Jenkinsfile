@@ -129,9 +129,6 @@ pipeline {
         // 5️⃣ Déploiement Kubernetes (Minikube)
         // =============================
         stage('Deploy to Kubernetes (Minikube)') {
-            when {
-                branch 'main'
-            }
             steps {
                 script {
                     echo "Deploying to Kubernetes..."
