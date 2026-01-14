@@ -2,20 +2,28 @@ pipeline {
     agent any
 
     environment {
-        // Configuration générale
+        // =============================
+        // Configuration générale Docker
+        // =============================
         DOCKER_REGISTRY = 'docker.io'
-        DOCKER_USERNAME = 'jihedmekni' 
+        DOCKER_USERNAME = 'jihedmekni'
         // DOCKER_PASSWORD doit être configuré dans Jenkins Credentials
-        
-        // SonarQube Configuration
-        SONAR_HOST_URL = 'http://51.68.70.207:9000' // URL du serveur SonarQube sur la VM
-        SONAR_PROJECT_KEY = 'devops-fullstack'
-        // SONAR_TOKEN doit être configuré dans Jenkins Credentials (id: sonar-token)
 
-        // API URL pour le build Frontend (IP publique de la VM)
+        // =============================
+        // SonarQube Configuration
+        // =============================
+        SONAR_HOST_URL = 'http://51.68.70.207:9000'
+        SONAR_PROJECT_KEY = 'devops-fullstack'
+        // SONAR_TOKEN doit être configuré dans Jenkins Credentials
+
+        // =============================
+        // API URL pour Frontend
+        // =============================
         API_URL = 'http://51.68.70.207:5000'
-        
-        // Kubeconfig pour Minikube (si nécessaire, souvent géré par l'agent/plugin)
+
+        // =============================
+        // Kubeconfig pour Minikube
+        // =============================
         KUBECONFIG = '/var/lib/jenkins/.kube/config'
     }
 
@@ -26,6 +34,10 @@ pipeline {
     }
 
     stages {
+
+        // =============================
+        // 1️⃣ Checkout du code
+        // =============================
         stage('Checkout') {
             steps {
                 script {
@@ -36,6 +48,9 @@ pipeline {
             }
         }
 
+        // =============================
+        // 2️⃣ Installation des dépendances
+        // =============================
         stage('Install Dependencies') {
             steps {
                 script {
@@ -47,9 +62,6 @@ pipeline {
                             }
                         },
                         "Frontend": {
-                            // Frontend est à la racine, mais pour l'isolation, on s'assure d'être au bon endroit
-                            // Note: L'utilisateur a mentionné 'cd app', mais docker-compose indique '.'
-                            // On assume la racine '.'
                             sh 'npm ci'
                         }
                     )
@@ -57,60 +69,9 @@ pipeline {
             }
         }
 
-        // stage('Run Tests') {
-        //     steps {
-        //         script {
-        //             echo "Running Unit Tests..."
-        //             parallel(
-        //                 "Backend Tests": {
-        //                     dir('server') {
-        //                         // Ignore failure pour ne pas bloquer le pipeline si les tests échouent (pour demo)
-        //                         // En prod, enlever returnStatus: true
-        //                         sh 'npm test -- --passWithNoTests || true'
-        //                     }
-        //                 },
-        //                 "Frontend Tests": {
-        //                     // Frontend root
-        //                     sh 'npm test -- --passWithNoTests || true'
-        //                 }
-        //             )
-        //         }
-        //     }
-        //     post {
-        //         always {
-        //             // Publie les résultats JUnit s'ils existent (configurer jest-junit)
-        //             junit allowEmptyResults: true, testResults: '**/junit.xml'
-        //         }
-        //     }
-        // }
-
-        // stage('SAST - SonarQube Scan') {
-        //     steps {
-        //         script {
-        //             echo "Starting SonarQube Analysis..."
-        //             // Nécessite le plugin SonarQube Scanner dans Jenkins
-        //             withSonarQubeEnv('SonarQube') { // Nom du serveur configuré dans Jenkins
-        //                 // Scan du projet entier (Frontend + Backend)
-        //                 // sonar-project.properties devrait être à la racine
-        //                 sh """
-        //                     sonar-scanner \
-        //                     -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-        //                     -Dsonar.sources=. \
-        //                     -Dsonar.exclusions=**/node_modules/**,**/.next/**,**/dist/** \
-        //                     -Dsonar.host.url=${SONAR_HOST_URL} \
-        //                     -Dsonar.login=\${SONAR_TOKEN}
-        //                 """
-        //             }
-        //         }
-        //     }
-        //     post {
-        //         success {
-        //             echo "SonarQube analysis successful. Waiting for Quality Gate..."
-        //             // waitForQualityGate abortPipeline: true
-        //         }
-        //     }
-        // }
-
+        // =============================
+        // 3️⃣ Build des images Docker
+        // =============================
         stage('Build Docker Images') {
             steps {
                 script {
@@ -118,106 +79,89 @@ pipeline {
                     parallel(
                         "Backend Build": {
                             dir('server') {
-                                sh "docker build -t ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} ."
-                                sh "docker tag ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-backend:latest"
+                                sh """
+                                    docker build -t ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} .
+                                    docker tag ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-backend:latest
+                                """
                             }
                         },
                         "Frontend Build": {
-                            // Root context
                             sh """
-                                docker build \
-                                --build-arg API_URL=${API_URL} \
-                                -t ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} .
+                                docker build --build-arg API_URL=${API_URL} -t ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} .
+                                docker tag ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-frontend:latest
                             """
-                            sh "docker tag ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-frontend:latest"
                         }
                     )
                 }
             }
         }
 
+        // =============================
+        // 4️⃣ Push Docker Hub
+        // =============================
         stage('Push to Docker Hub') {
             steps {
                 script {
                     echo "Pushing images to Docker Hub..."
-                    withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME_VAR')]) {
-                        sh "echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME_VAR --password-stdin"
-                        
-                        // Push Backend
-                        sh "docker push ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER}"
-                        sh "docker push ${DOCKER_USERNAME}/devops-backend:latest"
-                        
-                        // Push Frontend
-                        sh "docker push ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER}"
-                        sh "docker push ${DOCKER_USERNAME}/devops-frontend:latest"
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-hub-credentials',
+                        usernameVariable: 'DOCKER_USERNAME_VAR',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )]) {
+                        sh '''
+                            # Login Docker sécurisé
+                            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME_VAR" --password-stdin
+
+                            # Push Backend
+                            docker push ${DOCKER_USERNAME_VAR}/devops-backend:${BUILD_NUMBER}
+                            docker push ${DOCKER_USERNAME_VAR}/devops-backend:latest
+
+                            # Push Frontend
+                            docker push ${DOCKER_USERNAME_VAR}/devops-frontend:${BUILD_NUMBER}
+                            docker push ${DOCKER_USERNAME_VAR}/devops-frontend:latest
+                        '''
                     }
                 }
             }
         }
 
-        // stage('Deploy to Staging (Docker Compose)') {
-        //     steps {
-        //         script {
-        //             echo "Deploying to Staging Environment..."
-        //             // Simule le déploiement sur staging (machine locale/agent current)
-        //             sh 'docker-compose down'
-        //             sh 'docker-compose pull'
-        //             sh 'docker-compose up -d'
-                    
-        //             // Attente de la disponibilité
-        //             echo "Waiting for services to be ready..."
-        //             sleep 30
-        //         }
-        //     }
-        // }
-
-        // stage('DAST - OWASP ZAP Scan') {
-        //     steps {
-        //         script {
-        //             echo "Running DAST Security Scan with OWASP ZAP..."
-        //             // Lance le scan ZAP via Docker
-        //             // Scanne le frontend sur le port 3000
-        //             sh """
-        //                 docker run --network host -v \$(pwd):/zap/wrk/:rw -t owasp/zap2docker-stable zap-baseline.py \
-        //                 -t http://localhost:3000 \
-        //                 -g gen.conf \
-        //                 -r zap_report.html || true
-        //             """
-        //         }
-        //     }
-        //     post {
-        //         always {
-        //             // Archive le rapport HTML
-        //             archiveArtifacts artifacts: 'zap_report.html', allowEmptyArchive: true
-        //         }
-        //     }
-        // }
-
+        // =============================
+        // 5️⃣ Déploiement Kubernetes (Minikube)
+        // =============================
         stage('Deploy to Kubernetes (Minikube)') {
             when {
-                branch 'main' // Déploiement K8s uniquement sur la branche main
+                branch 'main'
             }
             steps {
                 script {
-                    // Crée le Secret Kubernetes à partir du fichier .env
-                    // On utilise --dry-run=client -o yaml | kubectl apply pour être idempotent
+                    echo "Deploying to Kubernetes..."
+                    
+                    // Crée le secret à partir du fichier .env
                     sh 'kubectl create secret generic app-env --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -'
 
-                    // Applique les autres manifests K8s
+                    // Applique les manifests
                     sh 'kubectl apply -f k8s/mysql/'
                     sh 'kubectl apply -f k8s/backend/'
                     sh 'kubectl apply -f k8s/frontend/'
-                    
-                    // Vérifie le déploiement
-                    sh 'kubectl rollout status deployment/mysql-deployment || true'
-                    sh 'kubectl rollout status deployment/backend-deployment || true'
-                    sh 'kubectl rollout status deployment/frontend-deployment || true'
-                    
+
+                    // Vérifie les déploiements
+                    sh '''
+                        kubectl rollout status deployment/mysql-deployment || true
+                        kubectl rollout status deployment/backend-deployment || true
+                        kubectl rollout status deployment/frontend-deployment || true
+                    '''
+
                     // Affiche les services
                     sh 'kubectl get svc'
                 }
             }
         }
+
+        // =============================
+        // (Optionnel) Tests, SonarQube, DAST, Staging
+        // =============================
+        // Les stages pour tests unitaires, SonarQube scan, OWASP ZAP ou Docker Compose staging
+        // peuvent être réactivés ici en les décommentant
     }
 
     post {
@@ -227,11 +171,9 @@ pipeline {
         }
         success {
             echo "Pipeline succeeded! ✅"
-            // slackSend color: "good", message: "Pipeline Suceeded: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
         }
         failure {
             echo "Pipeline failed! ❌"
-            // slackSend color: "danger", message: "Pipeline Failed: ${env.JOB_NAME} ${env.BUILD_NUMBER}"
         }
     }
 }
