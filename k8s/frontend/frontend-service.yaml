@@ -9,6 +9,6 @@ spec:
   selector:
     app: frontend
   ports:
-  - port: 3000
-    targetPort: 3000
-    nodePort: 30080
+  - port: 5000           # Port interne du cluster (doit matcher le containerPort)
+    targetPort: 5000     # Container Next.js écoute sur 5000
+    nodePort: 30080      # Port exposé sur le VPS
