@@ -6,7 +6,7 @@ metadata:
     app: frontend
     version: v1
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: frontend
@@ -26,7 +26,7 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 5000  # Correct port correspondant à Next.js
-        envFrom:
+        envFrom: 
         - secretRef:
             name: app-env
         env:
