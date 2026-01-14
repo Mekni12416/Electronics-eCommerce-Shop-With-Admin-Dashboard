@@ -133,8 +133,12 @@ pipeline {
                 script {
                     echo "Deploying to Kubernetes..."
                     
-                    // Crée le secret à partir du fichier .env
-                    sh 'kubectl create secret generic app-env --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -'
+                    // On utilise un 'Secret File' configuré dans Jenkins pour le fichier .env
+                    // car le fichier .env est ignoré par Git pour des raisons de sécurité.
+                    withCredentials([file(credentialsId: 'app-env-file', variable: 'ENV_FILE')]) {
+                        // Crée le Secret Kubernetes à partir du fichier fourni par Jenkins
+                        sh "kubectl create secret generic app-env --from-env-file=\$ENV_FILE --dry-run=client -o yaml | kubectl apply -f -"
+                    }
 
                     // Applique les manifests
                     sh 'kubectl apply -f k8s/mysql/'
