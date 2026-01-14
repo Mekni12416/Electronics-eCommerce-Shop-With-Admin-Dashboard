@@ -1,182 +1,176 @@
 pipeline {
     agent any
 
+    // =====================================================
+    // 🌍 VARIABLES D’ENVIRONNEMENT GLOBALES
+    // =====================================================
     environment {
-        // =============================
-        // Configuration générale Docker
-        // =============================
+
+        // -------- Docker --------
         DOCKER_REGISTRY = 'docker.io'
         DOCKER_USERNAME = 'jihedmekni'
-        // DOCKER_PASSWORD doit être configuré dans Jenkins Credentials
 
-        // =============================
-        // SonarQube Configuration
-        // =============================
+        // -------- SonarQube --------
         SONAR_HOST_URL = 'http://51.68.70.207:9000'
         SONAR_PROJECT_KEY = 'devops-fullstack'
-        // SONAR_TOKEN doit être configuré dans Jenkins Credentials
 
-        // =============================
-        // API URL pour Frontend
-        // =============================
+        // -------- Frontend --------
         API_URL = 'http://51.68.70.207:5000'
 
-        // =============================
-        // Kubeconfig pour Minikube
-        // =============================
+        // -------- Kubernetes (k3s) --------
         KUBECONFIG = '/var/lib/jenkins/.kube/config'
+        KUBE_NAMESPACE = 'default'
     }
 
+    // =====================================================
+    // ⏱️ TRIGGERS
+    // =====================================================
     triggers {
-        // Vérifie les changements SCM toutes les 5 minutes
         pollSCM('H/5 * * * *')
-        // Accepte les notifications de GitHub Webhook
     }
 
     stages {
 
-        // =============================
-        // 1️⃣ Checkout du code
-        // =============================
-        stage('Checkout') {
+        // =====================================================
+        // 1️⃣ CHECKOUT
+        // =====================================================
+        stage('Checkout Source Code') {
             steps {
-                script {
-                    echo "Checking out code from Git..."
-                    checkout scm
-                    sh 'git branch --show-current'
-                }
+                echo "📥 Cloning repository..."
+                checkout scm
+                sh 'git branch --show-current'
             }
         }
 
-        // =============================
-        // 2️⃣ Installation des dépendances
-        // =============================
+        // =====================================================
+        // 2️⃣ INSTALL DEPENDENCIES
+        // =====================================================
         stage('Install Dependencies') {
-            steps {
-                script {
-                    echo "Installing dependencies..."
-                    parallel(
-                        "Backend": {
-                            dir('server') {
-                                sh 'npm ci'
-                            }
-                        },
-                        "Frontend": {
+            parallel {
+
+                stage('Backend Dependencies') {
+                    steps {
+                        dir('server') {
                             sh 'npm ci'
                         }
-                    )
+                    }
+                }
+
+                stage('Frontend Dependencies') {
+                    steps {
+                        sh 'npm ci'
+                    }
                 }
             }
         }
 
-        // =============================
-        // 3️⃣ Build des images Docker
-        // =============================
+        // =====================================================
+        // 3️⃣ BUILD DOCKER IMAGES
+        // =====================================================
         stage('Build Docker Images') {
-            steps {
-                script {
-                    echo "Building Docker Images..."
-                    parallel(
-                        "Backend Build": {
-                            dir('server') {
-                                sh """
-                                    docker build -t ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} .
-                                    docker tag ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-backend:latest
-                                """
-                            }
-                        },
-                        "Frontend Build": {
+            parallel {
+
+                stage('Build Backend Image') {
+                    steps {
+                        dir('server') {
                             sh """
-                                docker build --build-arg API_URL=${API_URL} -t ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} .
-                                docker tag ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-frontend:latest
+                                docker build -t ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} .
+                                docker tag ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-backend:latest
                             """
                         }
-                    )
+                    }
                 }
-            }
-        }
 
-        // =============================
-        // 4️⃣ Push Docker Hub
-        // =============================
-        stage('Push to Docker Hub') {
-            steps {
-                script {
-                    echo "Pushing images to Docker Hub..."
-                    withCredentials([usernamePassword(
-                        credentialsId: 'docker-hub-credentials',
-                        usernameVariable: 'DOCKER_USERNAME_VAR',
-                        passwordVariable: 'DOCKER_PASSWORD'
-                    )]) {
-                        sh '''
-                            # Login Docker sécurisé
-                            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME_VAR" --password-stdin
-
-                            # Push Backend
-                            docker push ${DOCKER_USERNAME_VAR}/devops-backend:${BUILD_NUMBER}
-                            docker push ${DOCKER_USERNAME_VAR}/devops-backend:latest
-
-                            # Push Frontend
-                            docker push ${DOCKER_USERNAME_VAR}/devops-frontend:${BUILD_NUMBER}
-                            docker push ${DOCKER_USERNAME_VAR}/devops-frontend:latest
-                        '''
+                stage('Build Frontend Image') {
+                    steps {
+                        sh """
+                            docker build \
+                              --build-arg API_URL=${API_URL} \
+                              -t ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} .
+                            docker tag ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-frontend:latest
+                        """
                     }
                 }
             }
         }
 
-        // =============================
-        // 5️⃣ Déploiement Kubernetes (Minikube)
-        // =============================
-        stage('Deploy to Kubernetes (Minikube)') {
+        // =====================================================
+        // 4️⃣ PUSH TO DOCKER HUB
+        // =====================================================
+        stage('Push Docker Images') {
             steps {
-                script {
-                    echo "Deploying to Kubernetes..."
-                    
-                    // On utilise un 'Secret File' configuré dans Jenkins pour le fichier .env
-                    // car le fichier .env est ignoré par Git pour des raisons de sécurité.
-                    withCredentials([file(credentialsId: 'app-env-file', variable: 'ENV_FILE')]) {
-                        // Crée le Secret Kubernetes à partir du fichier fourni par Jenkins
-                        sh "kubectl create secret generic app-env --from-env-file=\$ENV_FILE --dry-run=client -o yaml | kubectl apply -f -"
-                    }
+                echo "📤 Pushing images to Docker Hub..."
 
-                    // Applique les manifests
-                    sh 'kubectl apply -f k8s/mysql/'
-                    sh 'kubectl apply -f k8s/backend/'
-                    sh 'kubectl apply -f k8s/frontend/'
-
-                    // Vérifie les déploiements
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-hub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
                     sh '''
-                        kubectl rollout status deployment/mysql-deployment || true
-                        kubectl rollout status deployment/backend-deployment || true
-                        kubectl rollout status deployment/frontend-deployment || true
-                    '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                    // Affiche les services
-                    sh 'kubectl get svc'
+                        docker push $DOCKER_USER/devops-backend:${BUILD_NUMBER}
+                        docker push $DOCKER_USER/devops-backend:latest
+
+                        docker push $DOCKER_USER/devops-frontend:${BUILD_NUMBER}
+                        docker push $DOCKER_USER/devops-frontend:latest
+                    '''
                 }
             }
         }
 
-        // =============================
-        // (Optionnel) Tests, SonarQube, DAST, Staging
-        // =============================
-        // Les stages pour tests unitaires, SonarQube scan, OWASP ZAP ou Docker Compose staging
-        // peuvent être réactivés ici en les décommentant
+        // =====================================================
+        // 5️⃣ DEPLOY TO KUBERNETES (k3s)
+        // =====================================================
+        stage('Deploy to Kubernetes (k3s)') {
+            steps {
+                echo "🚀 Deploying to Kubernetes (k3s)..."
+
+                withCredentials([file(
+                    credentialsId: 'app-env-file',
+                    variable: 'ENV_FILE'
+                )]) {
+                    sh '''
+                        kubectl create secret generic app-env \
+                          --from-env-file=$ENV_FILE \
+                          -n $KUBE_NAMESPACE \
+                          --dry-run=client -o yaml | kubectl apply -f -
+                    '''
+                }
+
+                sh 'kubectl apply -n $KUBE_NAMESPACE -f k8s/mysql/'
+                sh 'kubectl apply -n $KUBE_NAMESPACE -f k8s/backend/'
+                sh 'kubectl apply -n $KUBE_NAMESPACE -f k8s/frontend/'
+
+                sh '''
+                    kubectl rollout status deployment/mysql-deployment -n $KUBE_NAMESPACE || true
+                    kubectl rollout status deployment/backend-deployment -n $KUBE_NAMESPACE || true
+                    kubectl rollout status deployment/frontend-deployment -n $KUBE_NAMESPACE || true
+                '''
+
+                sh 'kubectl get pods -n $KUBE_NAMESPACE'
+                sh 'kubectl get svc -n $KUBE_NAMESPACE'
+            }
+        }
     }
 
+    // =====================================================
+    // 🧹 POST ACTIONS
+    // =====================================================
     post {
+
         always {
-            echo "Cleaning up workspace and Docker dangling images..."
+            echo "🧹 Cleaning workspace & Docker images..."
             cleanWs()
-            // Supprime les images Docker intermédiaires inutilisées pour libérer de l'espace
             sh 'docker image prune -f'
         }
+
         success {
-            echo "Pipeline succeeded! ✅"
+            echo "✅ Pipeline executed successfully!"
         }
+
         failure {
-            echo "Pipeline failed! ❌"
+            echo "❌ Pipeline failed. Check logs."
         }
     }
 }
