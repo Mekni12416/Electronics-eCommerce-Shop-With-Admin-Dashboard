@@ -26,6 +26,9 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 5000
+        envFrom:
+        - secretRef:
+            name: app-env
         resources:
           requests:
             cpu: 100m
