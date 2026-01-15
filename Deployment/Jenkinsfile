@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     // =====================================================
-    // 🌍 VARIABLES D’ENVIRONNEMENT GLOBALES
+    // 🌍 VARIABLES D'ENVIRONNEMENT GLOBALES
     // =====================================================
     environment {
 
@@ -11,7 +11,7 @@ pipeline {
         DOCKER_USERNAME = 'jihedmekni'
 
         // -------- SonarQube --------
-        SONAR_HOST_URL = 'http://51.68.70.207:9000'
+        SONAR_HOST_URL = 'http://51.68.70.207:30090'
         SONAR_PROJECT_KEY = 'devops-fullstack'
 
         // -------- Frontend --------
@@ -65,7 +65,26 @@ pipeline {
         }
 
         // =====================================================
-        // 3️⃣ BUILD DOCKER IMAGES
+        // 3️⃣ SAST - ANALYSE SONARQUBE
+        // =====================================================
+        stage('SAST - SonarQube Analysis') {
+            steps {
+                echo "🔍 Running SonarQube analysis..."
+                sh '''
+                    docker run --rm \
+                      -v "$(pwd):/usr/src" \
+                      sonarsource/sonar-scanner-cli \
+                      -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                      -Dsonar.sources=. \
+                      -Dsonar.host.url=${SONAR_HOST_URL} \
+                      -Dsonar.token=admin \
+                      -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/**,**/Jenkinsfile,**/*.md
+                '''
+            }
+        }
+
+        // =====================================================
+        // 4️⃣ BUILD DOCKER IMAGES
         // =====================================================
         stage('Build Docker Images') {
             parallel {
@@ -95,7 +114,7 @@ pipeline {
         }
 
         // =====================================================
-        // 4️⃣ PUSH TO DOCKER HUB
+        // 5️⃣ PUSH TO DOCKER HUB
         // =====================================================
         stage('Push Docker Images') {
             steps {
@@ -120,7 +139,7 @@ pipeline {
         }
 
         // =====================================================
-        // 5️⃣ DEPLOY TO KUBERNETES (k3s)
+        // 6️⃣ DEPLOY TO KUBERNETES (k3s)
         // =====================================================
         stage('Deploy to Kubernetes (k3s)') {
             steps {
@@ -167,6 +186,7 @@ pipeline {
 
         success {
             echo "✅ Pipeline executed successfully!"
+            echo "📊 SonarQube Dashboard: ${SONAR_HOST_URL}/dashboard?id=${SONAR_PROJECT_KEY}"
         }
 
         failure {
