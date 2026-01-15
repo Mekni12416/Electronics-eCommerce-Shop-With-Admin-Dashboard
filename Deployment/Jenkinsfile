@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     // =====================================================
-    // 🌍 VARIABLES D'ENVIRONNEMENT GLOBALES
+    // 🌍 VARIABLES D’ENVIRONNEMENT GLOBALES
     // =====================================================
     environment {
 
@@ -11,14 +11,14 @@ pipeline {
         DOCKER_USERNAME = 'jihedmekni'
 
         // -------- SonarQube --------
-        SONAR_HOST_URL = 'http://51.68.70.207:30090'
+        SONAR_HOST_URL   = 'http://51.68.70.207:30090'
         SONAR_PROJECT_KEY = 'devops-fullstack'
 
         // -------- Frontend --------
         API_URL = 'http://51.68.70.207:30081'
 
         // -------- Kubernetes (k3s) --------
-        KUBECONFIG = '/var/lib/jenkins/.kube/config'
+        KUBECONFIG     = '/var/lib/jenkins/.kube/config'
         KUBE_NAMESPACE = 'default'
     }
 
@@ -34,7 +34,7 @@ pipeline {
         // =====================================================
         // 1️⃣ CHECKOUT
         // =====================================================
-        stage('Checkout Source Code') {
+        stage('Checkout') {
             steps {
                 echo "📥 Cloning repository..."
                 checkout scm
@@ -48,7 +48,7 @@ pipeline {
         stage('Install Dependencies') {
             parallel {
 
-                stage('Backend Dependencies') {
+                stage('Backend') {
                     steps {
                         dir('server') {
                             sh 'npm ci'
@@ -56,7 +56,7 @@ pipeline {
                     }
                 }
 
-                stage('Frontend Dependencies') {
+                stage('Frontend') {
                     steps {
                         sh 'npm ci'
                     }
@@ -65,21 +65,27 @@ pipeline {
         }
 
         // =====================================================
-        // 3️⃣ SAST - ANALYSE SONARQUBE
+        // 3️⃣ SAST - SONARQUBE
         // =====================================================
         stage('SAST - SonarQube Analysis') {
             steps {
                 echo "🔍 Running SonarQube analysis..."
-                sh '''
-                    docker run --rm \
-                      -v "$(pwd):/usr/src" \
-                      sonarsource/sonar-scanner-cli \
-                      -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                      -Dsonar.sources=. \
-                      -Dsonar.host.url=${SONAR_HOST_URL} \
-                      -Dsonar.token=admin \
-                      -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/**,**/Jenkinsfile,**/*.md
-                '''
+
+                withCredentials([string(
+                    credentialsId: 'sonar-token',
+                    variable: 'SONAR_TOKEN'
+                )]) {
+                    sh '''
+                        docker run --rm \
+                          -v "$(pwd):/usr/src" \
+                          sonarsource/sonar-scanner-cli \
+                          -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                          -Dsonar.sources=. \
+                          -Dsonar.host.url=${SONAR_HOST_URL} \
+                          -Dsonar.login=${SONAR_TOKEN} \
+                          -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/**,**/Jenkinsfile,**/*.md
+                    '''
+                }
             }
         }
 
@@ -89,34 +95,37 @@ pipeline {
         stage('Build Docker Images') {
             parallel {
 
-                stage('Build Backend Image') {
+                stage('Backend Image') {
                     steps {
                         dir('server') {
-                            sh """
+                            sh '''
                                 docker build -t ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} .
-                                docker tag ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-backend:latest
-                            """
+                                docker tag  ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} \
+                                            ${DOCKER_USERNAME}/devops-backend:latest
+                            '''
                         }
                     }
                 }
 
-                stage('Build Frontend Image') {
+                stage('Frontend Image') {
                     steps {
-                        sh """
+                        sh '''
                             docker build \
                               --build-arg API_URL=${API_URL} \
                               -t ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} .
-                            docker tag ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-frontend:latest
-                        """
+
+                            docker tag ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} \
+                                       ${DOCKER_USERNAME}/devops-frontend:latest
+                        '''
                     }
                 }
             }
         }
 
         // =====================================================
-        // 5️⃣ PUSH TO DOCKER HUB
+        // 5️⃣ PUSH DOCKER IMAGES
         // =====================================================
-        stage('Push Docker Images') {
+        stage('Push to Docker Hub') {
             steps {
                 echo "📤 Pushing images to Docker Hub..."
 
@@ -141,7 +150,7 @@ pipeline {
         // =====================================================
         // 6️⃣ DEPLOY TO KUBERNETES (k3s)
         // =====================================================
-        stage('Deploy to Kubernetes (k3s)') {
+        stage('Deploy to Kubernetes') {
             steps {
                 echo "🚀 Deploying to Kubernetes (k3s)..."
 
@@ -162,13 +171,13 @@ pipeline {
                 sh 'kubectl apply -n $KUBE_NAMESPACE -f k8s/frontend/'
 
                 sh '''
-                    kubectl rollout status deployment/mysql-deployment -n $KUBE_NAMESPACE || true
-                    kubectl rollout status deployment/backend-deployment -n $KUBE_NAMESPACE || true
+                    kubectl rollout status deployment/mysql-deployment    -n $KUBE_NAMESPACE || true
+                    kubectl rollout status deployment/backend-deployment  -n $KUBE_NAMESPACE || true
                     kubectl rollout status deployment/frontend-deployment -n $KUBE_NAMESPACE || true
                 '''
 
                 sh 'kubectl get pods -n $KUBE_NAMESPACE'
-                sh 'kubectl get svc -n $KUBE_NAMESPACE'
+                sh 'kubectl get svc  -n $KUBE_NAMESPACE'
             }
         }
     }
@@ -186,11 +195,11 @@ pipeline {
 
         success {
             echo "✅ Pipeline executed successfully!"
-            echo "📊 SonarQube Dashboard: ${SONAR_HOST_URL}/dashboard?id=${SONAR_PROJECT_KEY}"
+            echo "📊 SonarQube: ${SONAR_HOST_URL}/dashboard?id=${SONAR_PROJECT_KEY}"
         }
 
         failure {
-            echo "❌ Pipeline failed. Check logs."
+            echo "❌ Pipeline failed. Check Jenkins logs."
         }
     }
 }
