@@ -83,6 +83,7 @@ pipeline {
                           -v "$(pwd):/usr/src" \
                           sonarsource/sonar-scanner-cli \
                           -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                          -Dsonar.branch.name=main \
                           -Dsonar.sources=. \
                           -Dsonar.host.url=${SONAR_HOST_URL} \
                           -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/dist/**,**/build/**,**/Jenkinsfile,**/*.md
