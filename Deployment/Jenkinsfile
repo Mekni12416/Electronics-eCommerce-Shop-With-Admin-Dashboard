@@ -1,0 +1,176 @@
+pipeline {
+    agent any
+
+    // =====================================================
+    // 🌍 VARIABLES D’ENVIRONNEMENT GLOBALES
+    // =====================================================
+    environment {
+
+        // -------- Docker --------
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_USERNAME = 'jihedmekni'
+
+        // -------- SonarQube --------
+        SONAR_HOST_URL = 'http://51.68.70.207:9000'
+        SONAR_PROJECT_KEY = 'devops-fullstack'
+
+        // -------- Frontend --------
+        API_URL = 'http://51.68.70.207:30081'
+
+        // -------- Kubernetes (k3s) --------
+        KUBECONFIG = '/var/lib/jenkins/.kube/config'
+        KUBE_NAMESPACE = 'default'
+    }
+
+    // =====================================================
+    // ⏱️ TRIGGERS
+    // =====================================================
+    triggers {
+        pollSCM('H/5 * * * *')
+    }
+
+    stages {
+
+        // =====================================================
+        // 1️⃣ CHECKOUT
+        // =====================================================
+        stage('Checkout Source Code') {
+            steps {
+                echo "📥 Cloning repository..."
+                checkout scm
+                sh 'git branch --show-current'
+            }
+        }
+
+        // =====================================================
+        // 2️⃣ INSTALL DEPENDENCIES
+        // =====================================================
+        stage('Install Dependencies') {
+            parallel {
+
+                stage('Backend Dependencies') {
+                    steps {
+                        dir('server') {
+                            sh 'npm ci'
+                        }
+                    }
+                }
+
+                stage('Frontend Dependencies') {
+                    steps {
+                        sh 'npm ci'
+                    }
+                }
+            }
+        }
+
+        // =====================================================
+        // 3️⃣ BUILD DOCKER IMAGES
+        // =====================================================
+        stage('Build Docker Images') {
+            parallel {
+
+                stage('Build Backend Image') {
+                    steps {
+                        dir('server') {
+                            sh """
+                                docker build -t ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} .
+                                docker tag ${DOCKER_USERNAME}/devops-backend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-backend:latest
+                            """
+                        }
+                    }
+                }
+
+                stage('Build Frontend Image') {
+                    steps {
+                        sh """
+                            docker build \
+                              --build-arg API_URL=${API_URL} \
+                              -t ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} .
+                            docker tag ${DOCKER_USERNAME}/devops-frontend:${BUILD_NUMBER} ${DOCKER_USERNAME}/devops-frontend:latest
+                        """
+                    }
+                }
+            }
+        }
+
+        // =====================================================
+        // 4️⃣ PUSH TO DOCKER HUB
+        // =====================================================
+        stage('Push Docker Images') {
+            steps {
+                echo "📤 Pushing images to Docker Hub..."
+
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-hub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh '''
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+
+                        docker push $DOCKER_USER/devops-backend:${BUILD_NUMBER}
+                        docker push $DOCKER_USER/devops-backend:latest
+
+                        docker push $DOCKER_USER/devops-frontend:${BUILD_NUMBER}
+                        docker push $DOCKER_USER/devops-frontend:latest
+                    '''
+                }
+            }
+        }
+
+        // =====================================================
+        // 5️⃣ DEPLOY TO KUBERNETES (k3s)
+        // =====================================================
+        stage('Deploy to Kubernetes (k3s)') {
+            steps {
+                echo "🚀 Deploying to Kubernetes (k3s)..."
+
+                withCredentials([file(
+                    credentialsId: 'app-env-file',
+                    variable: 'ENV_FILE'
+                )]) {
+                    sh '''
+                        kubectl create secret generic app-env \
+                          --from-env-file=$ENV_FILE \
+                          -n $KUBE_NAMESPACE \
+                          --dry-run=client -o yaml | kubectl apply -f -
+                    '''
+                }
+
+                sh 'kubectl apply -n $KUBE_NAMESPACE -f k8s/mysql/'
+                sh 'kubectl apply -n $KUBE_NAMESPACE -f k8s/backend/'
+                sh 'kubectl apply -n $KUBE_NAMESPACE -f k8s/frontend/'
+
+                sh '''
+                    kubectl rollout status deployment/mysql-deployment -n $KUBE_NAMESPACE || true
+                    kubectl rollout status deployment/backend-deployment -n $KUBE_NAMESPACE || true
+                    kubectl rollout status deployment/frontend-deployment -n $KUBE_NAMESPACE || true
+                '''
+
+                sh 'kubectl get pods -n $KUBE_NAMESPACE'
+                sh 'kubectl get svc -n $KUBE_NAMESPACE'
+            }
+        }
+    }
+
+    // =====================================================
+    // 🧹 POST ACTIONS
+    // =====================================================
+    post {
+
+        always {
+            echo "🧹 Cleaning workspace & Docker images..."
+            cleanWs()
+            sh 'docker image prune -f'
+        }
+
+        success {
+            echo "✅ Pipeline executed successfully!"
+        }
+
+        failure {
+            echo "❌ Pipeline failed. Check logs."
+        }
+    }
+}
