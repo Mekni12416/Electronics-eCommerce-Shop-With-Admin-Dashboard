@@ -15,7 +15,7 @@ pipeline {
         SONAR_PROJECT_KEY = 'devops-fullstack'
 
         // -------- Frontend --------
-        API_URL = 'http://51.68.70.207:5000'
+        API_URL = 'http://51.68.70.207:30081'
 
         // -------- Kubernetes (k3s) --------
         KUBECONFIG = '/var/lib/jenkins/.kube/config'
